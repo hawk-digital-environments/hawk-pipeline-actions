@@ -28,5 +28,5 @@ outputs:
     description: 'The HTML URL of the created release'
 
 runs:
-  using: 'node25'
+  using: 'node24'
   main: 'dist/index.js'

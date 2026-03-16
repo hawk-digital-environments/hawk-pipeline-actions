@@ -18,5 +18,5 @@ inputs:
     default: 'development'
 
 runs:
-  using: 'node25'
+  using: 'node24'
   main: 'dist/index.js'

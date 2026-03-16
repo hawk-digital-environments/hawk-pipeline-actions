@@ -6,5 +6,5 @@ outputs:
     description: 'The version number parsed from the branch name (e.g. "2.1.0")'
 
 runs:
-  using: 'node25'
+  using: 'node24'
   main: 'dist/index.js'
