@@ -30276,52 +30276,95 @@ const { execSync } = __nccwpck_require__(5317);
 const core = __nccwpck_require__(7484);
 const semver = __nccwpck_require__(2088);
 
-const TEMPLATE_MARKER = '[[DELETE_ME_TO_INCLUDE_THIS_FILE]]';
-
-const NEXT_TEMPLATE = `# vX.Y.Z (header will be updated by pipeline)
-
-> ${TEMPLATE_MARKER}
-> Fill in the sections below and remove this marker to enable the next release.
-> In order to trigger "create-release-branch", the marker MUST be removed.
+const NEXT_TEMPLATE = `# vX.Y.Z (header will be updated by the pipeline)
 
 ### What's New
 
-- The main new features and changes in this version.
+[//]: # (- The main new features and changes in this version.)
 
 ### Quality of Life
 
-- Improvements and enhancements that improve the user experience.
+[//]: # (- Improvements and enhancements that improve the user experience.)
 
 ### Bugfix
 
-- List of bugs that have been fixed in this version.
+[//]: # (- List of bugs that have been fixed in this version.)
 
 ### Deprecation
 
-- List of features or functionalities that have been deprecated in this version.
+[//]: # (- List of features or functionalities that have been deprecated in this version.)
 `;
 
-const NEXT_UPGRADE_TEMPLATE = `# Upgrade Guide (header will be updated by pipeline)
-
-> ${TEMPLATE_MARKER}
-> Fill in the sections below and remove this marker to include this upgrade guide in the next release.
-> If this version requires no special upgrade steps, leave this file exactly as-is.
+const NEXT_UPGRADE_TEMPLATE = `# Upgrade Guide (header will be updated by the pipeline)
 
 ## Overview
 
-Briefly describe what makes this upgrade different from a routine update
-and why manual intervention is required.
+[//]: # (Briefly describe what makes this upgrade different from a routine update)
+[//]: # (and why manual intervention is required.)
 
 ## Steps
 
 ### 1. Example step
 
-Describe what the user needs to do.
+[//]: # (Describe what the user needs to do.)
 
 ## Notes
 
-Any additional warnings or tips for administrators performing the upgrade.
+[//]: # (Any additional warnings or tips for administrators performing the upgrade.)
 `;
+
+/**
+ * Processes a markdown changelog file in two passes:
+ *
+ * Pass 1 — Strip template placeholder comments:
+ *   Removes all lines matching the [//]: # (text) markdown comment syntax.
+ *   These are the template hints visible in the editor but invisible when rendered.
+ *
+ * Pass 2 — Remove empty sections:
+ *   Any heading whose body contains only whitespace after pass 1 is dropped.
+ *   The document h1 is always dropped — the pipeline sets its own.
+ *
+ * Returns the processed body (without h1), or null if the file had no real content.
+ */
+function processChangelogContent(rawContent) {
+    // Pass 1: remove [//]: # (comment) lines
+    const withoutComments = rawContent.replace(/^\[\/\/\]: # \(.*?\)\n?/gm, '');
+
+    // Pass 2: bucket lines into sections, then discard empty ones and all h1s
+    const lines = withoutComments.split('\n');
+    const sections = [];
+    let heading = null;
+    let body = [];
+
+    const flush = () => {
+        sections.push({ heading, body: body.join('\n').trim() });
+        body = [];
+    };
+
+    for (const line of lines) {
+        if (/^#{1,6}\s/.test(line)) {
+            flush();
+            heading = line;
+        } else {
+            body.push(line);
+        }
+    }
+    flush();
+
+    const result = sections
+        .filter(section => {
+            if (section.heading && /^#\s/.test(section.heading)) return false; // always drop h1
+            return section.body !== ''; // drop sections with no real content
+        })
+        .map(section =>
+            section.heading
+                ? `${section.heading}\n\n${section.body}`
+                : section.body
+        )
+        .join('\n\n');
+
+    return result.trim() || null;
+}
 
 async function run() {
     const version = core.getInput('version', { required: true });
@@ -30352,7 +30395,6 @@ async function run() {
 
     core.info(`Creating "${releaseBranch}" from "${sourceBranch}".`);
 
-    // Ensure the release branch does not already exist remotely
     try {
         execSync(`git ls-remote --exit-code origin refs/heads/${releaseBranch}`, {
             cwd: workspace,
@@ -30367,7 +30409,6 @@ async function run() {
         core.info(`No existing "${releaseBranch}" found — proceeding.`);
     }
 
-    // Ensure we are not overwriting an existing version changelog
     const versionMdPath = path.join(changelogDirPath, `${version}.md`);
     if (fs.existsSync(versionMdPath)) {
         core.setFailed(
@@ -30377,27 +30418,20 @@ async function run() {
         return;
     }
 
-    // Create the release branch from the current HEAD
     execSync(`git checkout -b ${releaseBranch}`, execOpts);
 
-    // Process changelog files — these throw on fatal errors
     processNextMd(changelogDirPath, version);
     processNextUpgradeMd(changelogDirPath, version);
 
-    // Handle version file update
     await updateVersion(version, versionJson, versionUpdater, workspace);
 
-    // Commit and push
     execSync('git config --local user.email "action@github.com"', execOpts);
     execSync('git config --local user.name "GitHub Action"', execOpts);
-
-    // Stage changelog dir (covers both new files and modifications)
     execSync(`git add "${changelogDir}"`, execOpts);
 
     if (versionJson) {
         execSync(`git add "${versionJson}"`, execOpts);
     } else if (versionUpdater) {
-        // Stage any tracked files modified by the updater script
         execSync('git add -u', execOpts);
     }
 
@@ -30419,20 +30453,17 @@ function processNextMd(changelogDirPath, version) {
         process.exit(1);
     }
 
-    const content = fs.readFileSync(nextMdPath, 'utf8');
+    const processed = processChangelogContent(fs.readFileSync(nextMdPath, 'utf8'));
 
-    if (content.includes(TEMPLATE_MARKER)) {
+    if (!processed) {
         core.setFailed(
-            `next.md still contains the ${TEMPLATE_MARKER} marker. ` +
-            'Fill in the changelog entry and remove the marker before creating a release branch.'
+            'next.md contains no content beyond the template placeholders. ' +
+            'Add your changes under the relevant section headings before creating a release branch.'
         );
         process.exit(1);
     }
 
-    const lines = content.split('\n');
-    lines[0] = `# v${version}`;
-
-    fs.writeFileSync(versionMdPath, lines.join('\n'));
+    fs.writeFileSync(versionMdPath, `# v${version}\n\n${processed}\n`);
     core.info(`Created ${version}.md.`);
 
     fs.writeFileSync(nextMdPath, NEXT_TEMPLATE);
@@ -30442,24 +30473,20 @@ function processNextMd(changelogDirPath, version) {
 function processNextUpgradeMd(changelogDirPath, version) {
     const nextUpgradeMdPath = path.join(changelogDirPath, 'next-upgrade.md');
     const versionUpgradeMdPath = path.join(changelogDirPath, `${version}-upgrade.md`);
-    let shouldProcess = false;
-    let content = '';
 
     if (!fs.existsSync(nextUpgradeMdPath)) {
         core.info('No next-upgrade.md found — no upgrade guide will be included.');
-    } else {
-        content = fs.readFileSync(nextUpgradeMdPath, 'utf8');
-        if (content.includes(TEMPLATE_MARKER)) {
-            core.info(`next-upgrade.md contains the ${TEMPLATE_MARKER} marker — skipping.`);
-        } else {
-            shouldProcess = true;
-        }
+        fs.writeFileSync(nextUpgradeMdPath, NEXT_UPGRADE_TEMPLATE);
+        core.info('Created next-upgrade.md from template.');
+        return;
     }
 
-    if (shouldProcess) {
-        const lines = content.split('\n');
-        lines[0] = `# Upgrading to v${version}`;
-        fs.writeFileSync(versionUpgradeMdPath, lines.join('\n'));
+    const processed = processChangelogContent(fs.readFileSync(nextUpgradeMdPath, 'utf8'));
+
+    if (!processed) {
+        core.info('next-upgrade.md contains only template placeholders — no upgrade guide will be included.');
+    } else {
+        fs.writeFileSync(versionUpgradeMdPath, `# Upgrading to v${version}\n\n${processed}\n`);
         core.info(`Created ${version}-upgrade.md.`);
     }
 
