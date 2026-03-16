@@ -30314,31 +30314,32 @@ const NEXT_UPGRADE_TEMPLATE = `# Upgrade Guide (header will be updated by the pi
 `;
 
 /**
- * Processes a markdown changelog file in two passes:
+ * Processes a markdown changelog file in two stages:
  *
  * Pass 1 — Strip template placeholder comments:
- *   Removes all lines matching the [//]: # (text) markdown comment syntax.
- *   These are the template hints visible in the editor but invisible when rendered.
+ *   Removes all [//]: # (text) lines.
  *
- * Pass 2 — Remove empty sections:
- *   Any heading whose body contains only whitespace after pass 1 is dropped.
- *   The document h1 is always dropped — the pipeline sets its own.
+ * Pass 2 — Remove empty sections (iterates until stable):
+ *   A heading is removed if its direct body is empty AND the next heading is
+ *   at the same level or shallower (i.e. it has no child sections to justify
+ *   its existence). Repeats so that newly-orphaned parents are also cleaned up.
+ *   h1 headings are always dropped — the pipeline sets its own.
  *
- * Returns the processed body (without h1), or null if the file had no real content.
+ * Returns the processed body without h1, or null if nothing real remained.
  */
 function processChangelogContent(rawContent) {
     // Pass 1: remove [//]: # (comment) lines
     const withoutComments = rawContent.replace(/^\[\/\/\]: # \(.*?\)\n?/gm, '');
 
-    // Pass 2: bucket lines into sections, then discard empty ones and all h1s
+    // Parse into sections: each section is { heading, body }
     const lines = withoutComments.split('\n');
-    const sections = [];
+    let sections = [];
     let heading = null;
-    let body = [];
+    let bodyLines = [];
 
     const flush = () => {
-        sections.push({ heading, body: body.join('\n').trim() });
-        body = [];
+        sections.push({ heading, body: bodyLines.join('\n').trim() });
+        bodyLines = [];
     };
 
     for (const line of lines) {
@@ -30346,24 +30347,67 @@ function processChangelogContent(rawContent) {
             flush();
             heading = line;
         } else {
-            body.push(line);
+            bodyLines.push(line);
         }
     }
     flush();
 
-    const result = sections
-        .filter(section => {
-            if (section.heading && /^#\s/.test(section.heading)) return false; // always drop h1
-            return section.body !== ''; // drop sections with no real content
-        })
-        .map(section =>
-            section.heading
-                ? `${section.heading}\n\n${section.body}`
-                : section.body
-        )
-        .join('\n\n');
+    // Pass 2: iteratively drop empty sections until the list stabilises
+    const headingLevel = (h) => h.match(/^(#{1,6})\s/)[1].length;
 
-    return result.trim() || null;
+    let changed = true;
+    while (changed) {
+        changed = false;
+        const kept = [];
+
+        for (let i = 0; i < sections.length; i++) {
+            const section = sections[i];
+            const next = sections[i + 1];
+
+            // Pre-document content (before the first heading)
+            if (section.heading === null) {
+                if (section.body) kept.push(section);
+                else changed = true;
+                continue;
+            }
+
+            // h1: always drop — the pipeline sets its own
+            if (/^#\s/.test(section.heading)) {
+                changed = true;
+                continue;
+            }
+
+            // Non-empty body: always keep
+            if (section.body) {
+                kept.push(section);
+                continue;
+            }
+
+            // Empty body: keep only if the next heading is a child (deeper level),
+            // meaning this heading is a container whose children give it meaning
+            const currentLevel = headingLevel(section.heading);
+            const nextLevel = next?.heading ? headingLevel(next.heading) : null;
+
+            if (nextLevel !== null && nextLevel > currentLevel) {
+                kept.push(section); // parent container — re-evaluated next iteration
+            } else {
+                changed = true; // drop and re-run to catch newly-orphaned parents
+            }
+        }
+
+        sections = kept;
+    }
+
+    if (sections.length === 0) return null;
+
+    return sections
+        .map(section => {
+            if (!section.heading) return section.body;
+            return section.body
+                ? `${section.heading}\n\n${section.body}`
+                : section.heading;
+        })
+        .join('\n\n');
 }
 
 async function run() {
@@ -30486,7 +30530,7 @@ function processNextUpgradeMd(changelogDirPath, version) {
     if (!processed) {
         core.info('next-upgrade.md contains only template placeholders — no upgrade guide will be included.');
     } else {
-        fs.writeFileSync(versionUpgradeMdPath, `# Upgrading to v${version}\n\n${processed}\n`);
+        fs.writeFileSync(versionUpgradeMdPath, `# Upgrading to ${version}\n\n${processed}\n`);
         core.info(`Created ${version}-upgrade.md.`);
     }
 
