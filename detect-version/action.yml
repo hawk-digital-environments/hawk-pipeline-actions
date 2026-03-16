@@ -27,6 +27,8 @@ inputs:
 outputs:
   version:
     description: 'The detected version, always in X.Y.Z format without a leading "v".'
+  should-release:
+    description: 'True if the detected version does not yet exist as a git tag on the remote.'
 
 runs:
   using: 'node20'

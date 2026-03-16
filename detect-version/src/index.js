@@ -20,8 +20,33 @@ function run() {
     const version = detectVersion(strategy, workspace);
 
     if (version !== null) {
+        const shouldRelease = !isAlreadyTagged(version, workspace);
+
         core.info(`Detected version: ${version}`);
+        core.info(shouldRelease
+            ? `Version ${version} has not been released yet — should-release=true`
+            : `Version ${version} is already tagged — should-release=false`
+        );
+
         core.setOutput('version', version);
+        core.setOutput('should-release', String(shouldRelease));
+    }
+}
+
+/**
+ * Checks the remote for a tag matching the given version.
+ * Uses ls-remote so it works regardless of local fetch depth.
+ */
+function isAlreadyTagged(version, workspace) {
+    try {
+        const result = execSync(
+            `git ls-remote --tags origin refs/tags/${version}`,
+            { cwd: workspace, stdio: 'pipe' }
+        ).toString().trim();
+        return result.length > 0;
+    } catch (error) {
+        core.warning(`Could not check remote tags: ${error.message}. Assuming not yet released.`);
+        return false;
     }
 }
 

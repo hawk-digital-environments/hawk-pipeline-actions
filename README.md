@@ -89,7 +89,6 @@ Lines written as [//]: # (text) are template hints — they are visible in your 
 [//]: # (Any additional warnings or tips for administrators performing the upgrade.)
 ```
 
-
 To guide your team, you can also add the `_changelog/README.md` file with instructions on how to use the changelog files and the release process.
 
 ```
@@ -195,7 +194,6 @@ The only place the `v` prefix appears is in the **GitHub Release display name** 
 | Docker image tag    | no prefix         | `digitalenvironments/${YOUR_APP}:2.1.0` |
 
 ```
-
 
 ### 3. Pin to a release
 
@@ -383,7 +381,7 @@ jobs:
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [detect-version, build-and-publish]
+    needs: [ detect-version, build-and-publish ]
     permissions:
       contents: write
     outputs:
@@ -423,44 +421,51 @@ jobs:
 
 ### `detect-version`
 
-Detects the current project version using one of four strategies. The output is always
-normalized to `X.Y.Z` format without a leading `v`, regardless of the source.
+Detects the current project version using one of four strategies, then checks whether that version has already been released by looking for a matching tag on the remote. The version output is always normalized to `X.Y.Z` without a leading `v`.
 
-| Input | Required | Default | Description |
-|---|---|---|---|
-| `strategy` | | `tag` | Detection strategy: `tag`, `static`, `version-json`, or `changelog` |
-| `version` | | — | The version to use. Only for the `static` strategy. |
-| `version-json` | | — | Path to a JSON file with a `"version"` property. Only for `version-json`. |
-| `changelog-dir` | | `_changelog` | Changelog directory to scan. Only for `changelog`. |
+| Input           | Required | Default      | Description                                                               |
+|-----------------|----------|--------------|---------------------------------------------------------------------------|
+| `strategy`      |          | `tag`        | Detection strategy: `tag`, `static`, `version-json`, or `changelog`       |
+| `version`       |          | —            | The version to use. Only for the `static` strategy.                       |
+| `version-json`  |          | —            | Path to a JSON file with a `"version"` property. Only for `version-json`. |
+| `changelog-dir` |          | `_changelog` | Changelog directory to scan. Only for `changelog`.                        |
 
-| Output | Description |
-|---|---|
-| `version` | Detected version in `X.Y.Z` format |
+| Output           | Description                                                                                |
+|------------------|--------------------------------------------------------------------------------------------|
+| `version`        | Detected version in `X.Y.Z` format                                                         |
+| `should-release` | `'true'` if the version does not yet exist as a git tag on the remote, `'false'` otherwise |
 
 **Strategies:**
 
-| Strategy | Behaviour |
-|---|---|
-| `tag` | Reads the semver tag on the current HEAD commit. Fails if there is no tag or the tag is not valid semver. Designed for tag-push triggered workflows. |
-| `static` | Passes the `version` input through after validating it is valid semver. |
-| `version-json` | Reads and validates the `"version"` property from a JSON file. |
-| `changelog` | Scans `changelog-dir` for `.md` files named with valid semver (e.g. `2.1.0.md`), returns the highest. Designed for branch-push triggered workflows. |
+| Strategy       | Behaviour                                                                                                                                            |
+|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `tag`          | Reads the semver tag on the current HEAD commit. Fails if there is no tag or the tag is not valid semver. Designed for tag-push triggered workflows. |
+| `static`       | Passes the `version` input through after validating it is valid semver.                                                                              |
+| `version-json` | Reads and validates the `"version"` property from a JSON file.                                                                                       |
+| `changelog`    | Scans `changelog-dir` for `.md` files named with valid semver (e.g. `2.1.0.md`), returns the highest. Designed for branch-push triggered workflows.  |
 
 ```yaml
 # Tag-push pipeline (default)
 - uses: hawk-digital-environments/hawk-pipeline-actions/detect-version@v1
+  id: detect
 
 # Read from a JSON file
 - uses: hawk-digital-environments/hawk-pipeline-actions/detect-version@v1
+  id: detect
   with:
     strategy: version-json
     version-json: package.json
 
-# Derive from changelog directory
+# Derive from changelog directory (typical for branch-push pipelines)
 - uses: hawk-digital-environments/hawk-pipeline-actions/detect-version@v1
+  id: detect
   with:
     strategy: changelog
     changelog-dir: _changelog
+
+# Gate subsequent steps on should-release
+- name: Build and publish
+  if: steps.detect.outputs.should-release == 'true'
 ```
 
 ---
@@ -553,7 +558,6 @@ Discord's character limits.
 
 The `create-release-branch` action supports two ways to update a version file when a release branch is prepared. Set one or the other, not both.
 
-
 ### Option A — `version-json`
 
 Points to any JSON file in your repository. The action updates the `"version"` key and writes the file back. Works for `package.json`, custom config files, or anything else that follows the `{ "version": "x.y.z" }` convention.
@@ -633,9 +637,9 @@ If the file still contains only template content when the release branch is crea
 
 Git tags and branch names do not carry a `v` prefix. The version `2.1.0` is tagged as`2.1.0` and the release branch is named `release/2.1.0`. The only place the `v` prefix appears is in the GitHub Release display name (`v2.1.0`).
 
-| Artefact | Format | Example |
-|---|---|---|
-| Git tag | no prefix | `2.1.0` |
-| Release branch | `release/` prefix | `release/2.1.0` |
-| GitHub Release name | `v` prefix | `v2.1.0` |
-| Docker image tag | no prefix | `your-org/your-image:2.1.0` |
+| Artefact            | Format            | Example                     |
+|---------------------|-------------------|-----------------------------|
+| Git tag             | no prefix         | `2.1.0`                     |
+| Release branch      | `release/` prefix | `release/2.1.0`             |
+| GitHub Release name | `v` prefix        | `v2.1.0`                    |
+| Docker image tag    | no prefix         | `your-org/your-image:2.1.0` |
