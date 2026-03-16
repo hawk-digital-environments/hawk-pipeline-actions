@@ -27580,7 +27580,10 @@ const removeGithubReferenceLinks = (text) => text
     .replace(/\(\s*\)/g, '');
 
 const reduceHeadings = (text) => text
-    .replace(/^###\s+(.+)$/gm, '**__$1__**')
+    .replace(/^######\s+(.+)$/gm, '_$1_')
+    .replace(/^#####\s+(.+)$/gm, '_$1_')
+    .replace(/^####\s+(.+)$/gm, '_$1_')
+    .replace(/^###\s+(.+)$/gm, '**_$1_**')
     .replace(/^##\s+(.+)$/gm, '**$1**');
 
 const convertLinksToMarkdown = (text) => {
