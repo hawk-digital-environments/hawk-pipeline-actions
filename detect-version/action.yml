@@ -1,0 +1,33 @@
+name: 'Detect Version'
+description: 'Detects the current project version using one of several strategies.'
+
+inputs:
+  strategy:
+    description: >
+      How to detect the version. One of:
+        "tag"          — reads the semver tag on the current HEAD commit (default)
+        "static"       — passes the "version" input through as-is
+        "version-json" — reads the "version" property from the file at "version-json"
+        "changelog"    — finds the highest semver-named .md file in "changelog-dir"
+    required: false
+    default: 'tag'
+  version:
+    description: 'The version to use. Only for the "static" strategy.'
+    required: false
+    default: ''
+  version-json:
+    description: 'Path to a JSON file containing a "version" property. Only for the "version-json" strategy.'
+    required: false
+    default: ''
+  changelog-dir:
+    description: 'Path to the changelog directory. Only for the "changelog" strategy.'
+    required: false
+    default: '_changelog'
+
+outputs:
+  version:
+    description: 'The detected version, always in X.Y.Z format without a leading "v".'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
