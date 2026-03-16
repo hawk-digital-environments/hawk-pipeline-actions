@@ -614,6 +614,8 @@ module.exports = async function (version, resolve) {
 
 The pipeline uses a two-file convention for tracking what goes into the next release.
 
+> `%%VERSION%%` will be replaced with the actual version number when the release branch is created, this works in both the main heading and any references within the body.
+
 ### `next.md` — the next changelog entry
 
 Fill this in as part of every pull request that introduces a user-visible change. Write real content as normal markdown lines under the appropriate heading. The `[//]: # (text)` lines are template hints — they are visible in your editor and invisible when rendered.

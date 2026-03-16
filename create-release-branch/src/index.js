@@ -3,8 +3,9 @@ const path = require('path');
 const { execSync } = require('child_process');
 const core = require('@actions/core');
 const semver = require('semver');
+const marked = require('marked');
 
-const NEXT_TEMPLATE = `# vX.Y.Z (header will be updated by the pipeline)
+const NEXT_TEMPLATE = `# v%%VERSION%%
 
 ### What's New
 
@@ -23,7 +24,7 @@ const NEXT_TEMPLATE = `# vX.Y.Z (header will be updated by the pipeline)
 [//]: # (- List of features or functionalities that have been deprecated in this version.)
 `;
 
-const NEXT_UPGRADE_TEMPLATE = `# Upgrade Guide (header will be updated by the pipeline)
+const NEXT_UPGRADE_TEMPLATE = `# Upgrading to version %%VERSION%%
 
 ## Overview
 
@@ -44,45 +45,48 @@ const NEXT_UPGRADE_TEMPLATE = `# Upgrade Guide (header will be updated by the pi
 /**
  * Processes a markdown changelog file in two stages:
  *
- * Pass 1 — Strip template placeholder comments:
- *   Removes all [//]: # (text) lines.
+ * Stage 1 — Strip template placeholder comments:
+ *   marked tokenizes [//]: # (text) as { type: "def", tag: "//", href: "#", title: "text" }.
+ *   We filter those tokens out before doing anything else.
  *
- * Pass 2 — Remove empty sections (iterates until stable):
- *   A heading is removed if its direct body is empty AND the next heading is
- *   at the same level or shallower (i.e. it has no child sections to justify
- *   its existence). Repeats so that newly-orphaned parents are also cleaned up.
- *   h1 headings are always dropped — the pipeline sets its own.
+ * Stage 2 — Remove empty sections (iterates until stable):
+ *   A heading is removed if its direct token body contains no meaningful content
+ *   AND the next heading is at the same depth or shallower (not a child).
+ *   Repeats so that cascading empty parents are also cleaned up.
  *
+ * Stage 3 — Reconstruct markdown from the remaining tokens, preserving original formatting and replace markers.
+ *
+ * Markdown is reconstructed from token.raw, preserving the original formatting exactly.
  * Returns the processed body without h1, or null if nothing real remained.
  */
-function processChangelogContent(rawContent) {
-    // Pass 1: remove [//]: # (comment) lines
-    const withoutComments = rawContent.replace(/^\[\/\/\]: # \(.*?\)\n?/gm, '');
+function processMarkdownContent(rawContent, args) {
+    // Stage 1: tokenize and strip template comments
+    const allTokens = marked.lexer(rawContent);
+    const tokens = allTokens.filter(
+        token => !(token.type === 'def' && token.tag === '//')
+    );
 
-    // Parse into sections: each section is { heading, body }
-    const lines = withoutComments.split('\n');
+    // Group tokens into sections: { heading: token|null, tokens: token[] }
+    // Each heading starts a new section; everything until the next heading is its body.
     let sections = [];
-    let heading = null;
-    let bodyLines = [];
+    let currentHeading = null;
+    let currentTokens = [];
 
-    const flush = () => {
-        sections.push({ heading, body: bodyLines.join('\n').trim() });
-        bodyLines = [];
-    };
-
-    for (const line of lines) {
-        if (/^#{1,6}\s/.test(line)) {
-            flush();
-            heading = line;
+    for (const token of tokens) {
+        if (token.type === 'heading') {
+            sections.push({ heading: currentHeading, tokens: currentTokens });
+            currentHeading = token;
+            currentTokens = [];
         } else {
-            bodyLines.push(line);
+            currentTokens.push(token);
         }
     }
-    flush();
+    sections.push({ heading: currentHeading, tokens: currentTokens });
 
-    // Pass 2: iteratively drop empty sections until the list stabilises
-    const headingLevel = (h) => h.match(/^(#{1,6})\s/)[1].length;
+    // A section body has meaningful content if it contains anything other than whitespace
+    const hasContent = (sectionTokens) => sectionTokens.some(t => t.type !== 'space');
 
+    // Stage 2: iteratively drop empty sections until the list stabilises
     let changed = true;
     while (changed) {
         changed = false;
@@ -92,34 +96,26 @@ function processChangelogContent(rawContent) {
             const section = sections[i];
             const next = sections[i + 1];
 
-            // Pre-document content (before the first heading)
+            // Pre-document content (before the first heading): keep if non-empty
             if (section.heading === null) {
-                if (section.body) kept.push(section);
+                if (hasContent(section.tokens)) kept.push(section);
                 else changed = true;
                 continue;
             }
 
-            // h1: always drop — the pipeline sets its own
-            if (/^#\s/.test(section.heading)) {
-                changed = true;
-                continue;
-            }
-
-            // Non-empty body: always keep
-            if (section.body) {
+            // Direct content present: always keep
+            if (hasContent(section.tokens)) {
                 kept.push(section);
                 continue;
             }
 
             // Empty body: keep only if the next heading is a child (deeper level),
-            // meaning this heading is a container whose children give it meaning
-            const currentLevel = headingLevel(section.heading);
-            const nextLevel = next?.heading ? headingLevel(next.heading) : null;
-
-            if (nextLevel !== null && nextLevel > currentLevel) {
+            // meaning this heading is a container whose children justify its presence
+            const nextDepth = next?.heading?.depth ?? null;
+            if (nextDepth !== null && nextDepth > section.heading.depth) {
                 kept.push(section); // parent container — re-evaluated next iteration
             } else {
-                changed = true; // drop and re-run to catch newly-orphaned parents
+                changed = true;
             }
         }
 
@@ -128,14 +124,20 @@ function processChangelogContent(rawContent) {
 
     if (sections.length === 0) return null;
 
+    // Reconstruct markdown from token.raw — preserves original formatting exactly
     return sections
         .map(section => {
-            if (!section.heading) return section.body;
-            return section.body
-                ? `${section.heading}\n\n${section.body}`
-                : section.heading;
+            const parts = [];
+            if (section.heading) {
+                parts.push(section.heading.raw.trimEnd());
+            }
+            const body = section.tokens.map(t => t.raw).join('').trim();
+            if (body) parts.push(body);
+            return parts.join('\n\n');
         })
-        .join('\n\n');
+        .join('\n\n')
+        .trim()
+        .replace(/%%VERSION%%/g, args.version || 'unknown-version');
 }
 
 async function run() {
@@ -225,7 +227,7 @@ function processNextMd(changelogDirPath, version) {
         process.exit(1);
     }
 
-    const processed = processChangelogContent(fs.readFileSync(nextMdPath, 'utf8'));
+    const processed = processMarkdownContent(fs.readFileSync(nextMdPath, 'utf8'), {version});
 
     if (!processed) {
         core.setFailed(
@@ -235,7 +237,7 @@ function processNextMd(changelogDirPath, version) {
         process.exit(1);
     }
 
-    fs.writeFileSync(versionMdPath, `# v${version}\n\n${processed}\n`);
+    fs.writeFileSync(versionMdPath, `${processed}\n`);
     core.info(`Created ${version}.md.`);
 
     fs.writeFileSync(nextMdPath, NEXT_TEMPLATE);
@@ -253,12 +255,12 @@ function processNextUpgradeMd(changelogDirPath, version) {
         return;
     }
 
-    const processed = processChangelogContent(fs.readFileSync(nextUpgradeMdPath, 'utf8'));
+    const processed = processMarkdownContent(fs.readFileSync(nextUpgradeMdPath, 'utf8'), {version});
 
     if (!processed) {
         core.info('next-upgrade.md contains only template placeholders — no upgrade guide will be included.');
     } else {
-        fs.writeFileSync(versionUpgradeMdPath, `# Upgrading to ${version}\n\n${processed}\n`);
+        fs.writeFileSync(versionUpgradeMdPath, `${processed}\n`);
         core.info(`Created ${version}-upgrade.md.`);
     }
 
