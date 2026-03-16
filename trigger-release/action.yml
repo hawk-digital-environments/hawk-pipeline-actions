@@ -1,0 +1,22 @@
+name: 'Trigger Release'
+description: 'Squash-merges a release branch into the main and development branches, then creates a version tag.'
+
+inputs:
+  version:
+    description: 'The version being released (e.g. "2.1.0")'
+    required: true
+  release-branch:
+    description: 'The full name of the release branch (e.g. "release/2.1.0")'
+    required: true
+  main-branch:
+    description: 'The name of the production branch'
+    required: false
+    default: 'main'
+  development-branch:
+    description: 'The name of the integration/development branch'
+    required: false
+    default: 'development'
+
+runs:
+  using: 'node25'
+  main: 'dist/index.js'

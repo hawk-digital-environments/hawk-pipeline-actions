@@ -1,0 +1,10 @@
+name: 'Validate Release Branch'
+description: 'Validates that the workflow is running from a release branch and outputs the parsed version.'
+
+outputs:
+  version:
+    description: 'The version number parsed from the branch name (e.g. "2.1.0")'
+
+runs:
+  using: 'node25'
+  main: 'dist/index.js'

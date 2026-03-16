@@ -1,0 +1,28 @@
+name: 'Create Release Branch'
+description: 'Prepares a release branch from the current branch with changelog and version management.'
+
+inputs:
+  version:
+    description: 'Version to release (semver, e.g. 2.1.0)'
+    required: true
+  changelog-dir:
+    description: 'Path to the changelog directory, relative to the repository root'
+    required: false
+    default: '_changelog'
+  version-json:
+    description: >
+      Path to a JSON file (relative to repo root) in which the "version" property will be updated.
+      Mutually exclusive with version-updater.
+    required: false
+    default: ''
+  version-updater:
+    description: >
+      Path to a .js file (relative to repo root) that exports a default function
+      with signature (version: string, resolve: (path: string) => string) => void | Promise<void>.
+      Mutually exclusive with version-json.
+    required: false
+    default: ''
+
+runs:
+  using: 'node25'
+  main: 'dist/index.js'

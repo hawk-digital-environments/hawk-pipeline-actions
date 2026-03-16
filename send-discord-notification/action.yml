@@ -1,0 +1,24 @@
+name: 'Send Discord Release Notification'
+description: 'Sends a formatted release notification to a Discord channel via webhook.'
+
+inputs:
+  webhook-url:
+    description: 'Discord webhook URL'
+    required: true
+  release-name:
+    description: 'Title of the release'
+    required: true
+  release-body:
+    description: 'Body/description of the release (markdown)'
+    required: true
+  release-url:
+    description: 'URL to the release page'
+    required: true
+  content:
+    description: 'Optional message content sent outside the embed (e.g. for @mentions)'
+    required: false
+    default: ''
+
+runs:
+  using: 'node25'
+  main: 'dist/index.js'

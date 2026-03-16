@@ -1,0 +1,32 @@
+name: 'Create GitHub Release'
+description: 'Creates a GitHub Release from a changelog file.'
+
+inputs:
+  version:
+    description: 'The version to release. A leading "v" is accepted and stripped for file lookup.'
+    required: true
+  token:
+    description: 'GitHub token with permission to create releases'
+    required: true
+  changelog-dir:
+    description: 'Path to the changelog directory, relative to the repository root'
+    required: false
+    default: '_changelog'
+  docs-base-url:
+    description: >
+      Base URL of the project documentation site (e.g. "https://docs.example.com").
+      When set and an upgrade guide file exists, a link to it is appended to the release body.
+    required: false
+    default: ''
+
+outputs:
+  release-name:
+    description: 'The name of the created release'
+  release-body:
+    description: 'The body/description of the created release'
+  release-url:
+    description: 'The HTML URL of the created release'
+
+runs:
+  using: 'node25'
+  main: 'dist/index.js'

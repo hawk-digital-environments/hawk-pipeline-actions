@@ -1,0 +1,23 @@
+{
+  "name": "hawk-pipeline-actions",
+  "version": "1.0.0",
+  "description": "Reusable GitHub Actions for the HAWK release pipeline",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "npm run build:create-release-branch && npm run build:validate-release-branch && npm run build:trigger-release && npm run build:create-github-release && npm run build:send-discord-notification",
+    "build:create-release-branch": "ncc build create-release-branch/src/index.js -o create-release-branch/dist --license licenses.txt",
+    "build:validate-release-branch": "ncc build validate-release-branch/src/index.js -o validate-release-branch/dist --license licenses.txt",
+    "build:trigger-release": "ncc build trigger-release/src/index.js -o trigger-release/dist --license licenses.txt",
+    "build:create-github-release": "ncc build create-github-release/src/index.js -o create-github-release/dist --license licenses.txt",
+    "build:send-discord-notification": "ncc build send-discord-notification/src/index.js -o send-discord-notification/dist --license licenses.txt"
+  },
+  "dependencies": {
+    "@actions/core": "^1.10.1",
+    "@actions/github": "^6.0.0",
+    "semver": "^7.5.4"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.1"
+  }
+}
