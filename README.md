@@ -336,28 +336,26 @@ permissions:
   contents: write
 
 jobs:
+  detect-version:
+    name: Detect Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.detect.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: detect
+        uses: hawk-digital-environments/hawk-pipeline-actions/detect-version@v1
+        # strategy defaults to "tag" — reads the semver tag on the HEAD commit
+
   # ── project-specific ──────────────────────────────────────────────────────
-  # Build and publish your artifacts here.
-  # The example below is for a Docker image published to Docker Hub.
+  # Build and publish your artefacts here.
   build-and-publish:
     name: Build & Publish
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
-      attestations: write
-      id-token: write
-    outputs:
-      version: ${{ steps.version.outputs.version }}
+    needs: detect-version
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Read version
-        id: version
-        run: |
-          VERSION=$(jq -r .version config/my-app-version.json)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
+      - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
@@ -373,7 +371,7 @@ jobs:
           push: true
           tags: |
             your-org/your-image:latest
-            your-org/your-image:${{ steps.version.outputs.version }}
+            your-org/your-image:${{ needs.detect-version.outputs.version }}
 
       - uses: actions/attest-build-provenance@v1
         with:
@@ -385,7 +383,7 @@ jobs:
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: build-and-publish
+    needs: [detect-version, build-and-publish]
     permissions:
       contents: write
     outputs:
@@ -398,7 +396,7 @@ jobs:
       - id: release
         uses: hawk-digital-environments/hawk-pipeline-actions/create-github-release@v1
         with:
-          version: ${{ github.ref_name }}
+          version: ${{ needs.detect-version.outputs.version }}
           token: ${{ secrets.GITHUB_TOKEN }}
           # docs-base-url: https://docs.your-project.com  # optional
 
@@ -421,68 +419,55 @@ jobs:
 
 ---
 
-## Version management
+## Action reference
 
-### Option A — `version-json`
+### `detect-version`
 
-Points to any JSON file in your repository. The action updates the `"version"` key and
-writes the file back. Works for `package.json`, custom config files, or anything else
-that follows the `{ "version": "x.y.z" }` convention.
+Detects the current project version using one of four strategies. The output is always
+normalized to `X.Y.Z` format without a leading `v`, regardless of the source.
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `strategy` | | `tag` | Detection strategy: `tag`, `static`, `version-json`, or `changelog` |
+| `version` | | — | The version to use. Only for the `static` strategy. |
+| `version-json` | | — | Path to a JSON file with a `"version"` property. Only for `version-json`. |
+| `changelog-dir` | | `_changelog` | Changelog directory to scan. Only for `changelog`. |
+
+| Output | Description |
+|---|---|
+| `version` | Detected version in `X.Y.Z` format |
+
+**Strategies:**
+
+| Strategy | Behaviour |
+|---|---|
+| `tag` | Reads the semver tag on the current HEAD commit. Fails if there is no tag or the tag is not valid semver. Designed for tag-push triggered workflows. |
+| `static` | Passes the `version` input through after validating it is valid semver. |
+| `version-json` | Reads and validates the `"version"` property from a JSON file. |
+| `changelog` | Scans `changelog-dir` for `.md` files named with valid semver (e.g. `2.1.0.md`), returns the highest. Designed for branch-push triggered workflows. |
 
 ```yaml
-- uses: hawk-digital-environments/hawk-pipeline-actions/create-release-branch@v1
+# Tag-push pipeline (default)
+- uses: hawk-digital-environments/hawk-pipeline-actions/detect-version@v1
+
+# Read from a JSON file
+- uses: hawk-digital-environments/hawk-pipeline-actions/detect-version@v1
   with:
-    version: ${{ inputs.version }}
+    strategy: version-json
     version-json: package.json
-```
 
-### Option B — `version-updater`
-
-Points to a `.js` file in your repository that exports a default function. Use this when
-you need to update multiple files, use a non-JSON format, or run any other logic at
-version bump time.
-
-```yaml
-- uses: hawk-digital-environments/hawk-pipeline-actions/create-release-branch@v1
+# Derive from changelog directory
+- uses: hawk-digital-environments/hawk-pipeline-actions/detect-version@v1
   with:
-    version: ${{ inputs.version }}
-    version-updater: .github/version-updater.js
-```
-
-**Function signature:**
-
-```typescript
-(version: string, resolve: (path: string) => string) => void | Promise<void>
-```
-
-The `resolve` function converts a repository-relative path to an absolute path safe for
-use in the runner environment. Always use it instead of `__dirname` or `process.cwd()`.
-
-**Example `.github/version-updater.js`:**
-
-```javascript
-const fs = require('fs');
-
-module.exports = async function (version, resolve) {
-    // Update package.json
-    const pkgPath = resolve('package.json');
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    pkg.version = version;
-    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-
-    // Update a PHP constant, a Swift file, a .env — whatever you need
-    const phpPath = resolve('src/Version.php');
-    let php = fs.readFileSync(phpPath, 'utf8');
-    php = php.replace(/VERSION = '[^']+'/, `VERSION = '${version}'`);
-    fs.writeFileSync(phpPath, php);
-};
+    strategy: changelog
+    changelog-dir: _changelog
 ```
 
 ---
 
-## Action reference
-
 ### `create-release-branch`
+
+Processes the changelog files, creates a `release/X.Y.Z` branch from the current branch, and optionally updates a version file. Requires a prior `actions/checkout` with `token: ${{ secrets.WORKFLOW_TOKEN }}` and `fetch-depth: 0`.
 
 | Input             | Required | Default      | Description                                                             |
 |-------------------|----------|--------------|-------------------------------------------------------------------------|
@@ -509,6 +494,8 @@ No inputs. Reads `GITHUB_REF_NAME` from the environment automatically.
 
 ### `trigger-release`
 
+Squash-merges the release branch into the main and development branches, creates the version tag, and deletes the release branch. Requires a prior `actions/checkout` with `token: ${{ secrets.WORKFLOW_TOKEN }}` and `fetch-depth: 0`.
+
 | Input                | Required | Default       | Description                                            |
 |----------------------|----------|---------------|--------------------------------------------------------|
 | `version`            | ✅        | —             | Version being released                                 |
@@ -527,6 +514,8 @@ action logs a clear message explaining what needs manual attention.
 
 ### `create-github-release`
 
+Creates a GitHub Release from the versioned changelog file. The release body is the content of `{changelog-dir}/{version}.md` with the top-level heading stripped. If a matching `{version}-upgrade.md` exists, a reference to the upgrade guide is appended.
+
 | Input           | Required | Default      | Description                                                                                                              |
 |-----------------|----------|--------------|--------------------------------------------------------------------------------------------------------------------------|
 | `version`       | ✅        | —            | Version to release. A leading `v` is accepted and stripped for file lookup.                                              |
@@ -544,6 +533,8 @@ action logs a clear message explaining what needs manual attention.
 
 ### `send-discord-notification`
 
+Sends a formatted release notification to a Discord channel via webhook. Formats the release body for Discord: strips GitHub reference links, converts `@mentions` to profile links, downsizes headings to bold text, and enforces Discord character limits.
+
 | Input          | Required | Default | Description                                                                       |
 |----------------|----------|---------|-----------------------------------------------------------------------------------|
 | `webhook-url`  | ✅        | —       | Discord webhook URL                                                               |
@@ -555,3 +546,96 @@ action logs a clear message explaining what needs manual attention.
 The action formats the release body for Discord: removes GitHub reference links,
 converts `@mentions` to profile links, downsizes headings to bold text, and enforces
 Discord's character limits.
+
+---
+
+## Version management
+
+The `create-release-branch` action supports two ways to update a version file when a release branch is prepared. Set one or the other, not both.
+
+
+### Option A — `version-json`
+
+Points to any JSON file in your repository. The action updates the `"version"` key and writes the file back. Works for `package.json`, custom config files, or anything else that follows the `{ "version": "x.y.z" }` convention.
+
+```yaml
+- uses: hawk-digital-environments/hawk-pipeline-actions/create-release-branch@v1
+  with:
+    version: ${{ inputs.version }}
+    version-json: package.json
+```
+
+### Option B — `version-updater`
+
+Points to a `.js` file in your repository that exports a default function. Use this when you need to update multiple files, use a non-JSON format, or run any custom logic at version bump time.
+
+```yaml
+- uses: hawk-digital-environments/hawk-pipeline-actions/create-release-branch@v1
+  with:
+    version: ${{ inputs.version }}
+    version-updater: .github/version-updater.js
+```
+
+**Function signature:**
+
+```typescript
+(version: string, resolve: (path: string) => string) => void | Promise<void>
+```
+
+The `resolve` function converts a repository-relative path to an absolute path safe for use in the runner environment. Always use it instead of `__dirname` or `process.cwd()`.
+
+**Example `.github/version-updater.js`:**
+
+```javascript
+const fs = require('fs');
+
+module.exports = async function (version, resolve) {
+    // Update package.json
+    const pkgPath = resolve('package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    pkg.version = version;
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+
+    // Update a PHP constant, a Swift file, a .env — whatever you need
+    const phpPath = resolve('src/Version.php');
+    let php = fs.readFileSync(phpPath, 'utf8');
+    php = php.replace(/VERSION = '[^']+'/, `VERSION = '${version}'`);
+    fs.writeFileSync(phpPath, php);
+};
+```
+
+---
+
+## Changelog convention
+
+The pipeline uses a two-file convention for tracking what goes into the next release.
+
+### `next.md` — the next changelog entry
+
+Fill this in as part of every pull request that introduces a user-visible change. Write real content as normal markdown lines under the appropriate heading. The `[//]: # (text)` lines are template hints — they are visible in your editor and invisible when rendered.
+
+The pipeline processes this file in two passes when a release branch is created:
+
+1. **Strip template comments** — all `[//]: # (text)` lines are removed.
+2. **Remove empty sections** — any heading whose body contains only whitespace after pass 1 is dropped. A heading that acts as a parent container for sub-headings is only dropped if all its children are also empty. This repeats until stable, so cascading empty parents are cleaned up automatically.
+
+If the result is entirely empty, the pipeline fails with a descriptive error — you must write at least one real line of content before a release branch can be created.
+
+After processing, the file is reset to the template for the next release cycle. You never need to clear it manually.
+
+### `next-upgrade.md` — the next upgrade guide
+
+Fill this in only when your release requires administrators to take manual action when upgrading (config changes, migrations, etc.). The same two-pass processing applies.
+
+If the file still contains only template content when the release branch is created, it is silently skipped — no upgrade guide is included in the release. If real content is found, it is saved as `{version}-upgrade.md` and linked from the GitHub Release body.
+
+### Versioning convention
+
+Git tags and branch names do not carry a `v` prefix. The version `2.1.0` is tagged as`2.1.0` and the release branch is named `release/2.1.0`. The only place the `v` prefix appears is in the GitHub Release display name (`v2.1.0`).
+
+| Artefact | Format | Example |
+|---|---|---|
+| Git tag | no prefix | `2.1.0` |
+| Release branch | `release/` prefix | `release/2.1.0` |
+| GitHub Release name | `v` prefix | `v2.1.0` |
+| Docker image tag | no prefix | `your-org/your-image:2.1.0` |
