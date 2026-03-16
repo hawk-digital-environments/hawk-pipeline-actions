@@ -31,5 +31,5 @@ outputs:
     description: 'True if the detected version does not yet exist as a git tag on the remote.'
 
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'dist/index.js'
