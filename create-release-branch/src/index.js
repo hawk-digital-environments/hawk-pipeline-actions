@@ -5,42 +5,8 @@ const core = require('@actions/core');
 const semver = require('semver');
 const marked = require('marked');
 
-const NEXT_TEMPLATE = `# v%%VERSION%%
-
-### What's New
-
-[//]: # (- The main new features and changes in this version.)
-
-### Quality of Life
-
-[//]: # (- Improvements and enhancements that improve the user experience.)
-
-### Bugfix
-
-[//]: # (- List of bugs that have been fixed in this version.)
-
-### Deprecation
-
-[//]: # (- List of features or functionalities that have been deprecated in this version.)
-`;
-
-const NEXT_UPGRADE_TEMPLATE = `# Upgrading to version %%VERSION%%
-
-## Overview
-
-[//]: # (Briefly describe what makes this upgrade different from a routine update)
-[//]: # (and why manual intervention is required.)
-
-## Steps
-
-### 1. Example step
-
-[//]: # (Describe what the user needs to do.)
-
-## Notes
-
-[//]: # (Any additional warnings or tips for administrators performing the upgrade.)
-`;
+const DEFAULT_NEXT_TEMPLATE = fs.readFileSync(path.join(__dirname, 'next-template.md'), 'utf8');
+const DEFAULT_NEXT_UPGRADE_TEMPLATE = fs.readFileSync(path.join(__dirname, 'next-upgrade-template.md'), 'utf8');
 
 /**
  * Processes a markdown changelog file in two stages:
@@ -140,11 +106,39 @@ function processMarkdownContent(rawContent, args) {
         .replace(/%%VERSION%%/g, args.version || 'unknown-version');
 }
 
+/**
+ * Resolves a template string from an optional file path (relative to the workspace root)
+ * or falls back to the built-in default template.
+ *
+ * @param {string} inputPath - Path provided via action input (may be empty/undefined).
+ * @param {string} defaultTemplate - The bundled default template content.
+ * @param {string} workspace - Absolute path to GITHUB_WORKSPACE.
+ * @param {string} inputName - Input name used in error messages.
+ * @returns {string} The resolved template content.
+ */
+function resolveTemplate(inputPath, defaultTemplate, workspace, inputName) {
+    if (!inputPath) return defaultTemplate;
+
+    const fullPath = path.resolve(workspace, inputPath);
+    if (!fs.existsSync(fullPath)) {
+        core.setFailed(
+            `Custom template for "${inputName}" not found at: ${inputPath}`
+        );
+        process.exit(1);
+    }
+
+    const content = fs.readFileSync(fullPath, 'utf8');
+    core.info(`Using custom template for "${inputName}" from: ${inputPath}`);
+    return content;
+}
+
 async function run() {
     const version = core.getInput('version', { required: true });
     const changelogDir = core.getInput('changelog-dir') || '_changelog';
     const versionJson = core.getInput('version-json');
     const versionUpdater = core.getInput('version-updater');
+    const nextTemplatePath = core.getInput('next-template');
+    const nextUpgradeTemplatePath = core.getInput('next-upgrade-template');
 
     if (versionJson && versionUpdater) {
         core.setFailed(
@@ -166,6 +160,9 @@ async function run() {
     const changelogDirPath = path.join(workspace, changelogDir);
     const releaseBranch = `release/${version}`;
     const execOpts = { cwd: workspace, stdio: 'inherit' };
+
+    const NEXT_TEMPLATE = resolveTemplate(nextTemplatePath, DEFAULT_NEXT_TEMPLATE, workspace, 'next-template');
+    const NEXT_UPGRADE_TEMPLATE = resolveTemplate(nextUpgradeTemplatePath, DEFAULT_NEXT_UPGRADE_TEMPLATE, workspace, 'next-upgrade-template');
 
     core.info(`Creating "${releaseBranch}" from "${sourceBranch}".`);
 
@@ -194,8 +191,8 @@ async function run() {
 
     execSync(`git checkout -b ${releaseBranch}`, execOpts);
 
-    processNextMd(changelogDirPath, version);
-    processNextUpgradeMd(changelogDirPath, version);
+    processNextMd(changelogDirPath, version, NEXT_TEMPLATE);
+    processNextUpgradeMd(changelogDirPath, version, NEXT_UPGRADE_TEMPLATE);
 
     await updateVersion(version, versionJson, versionUpdater, workspace);
 
@@ -215,7 +212,7 @@ async function run() {
     core.info(`Branch "${releaseBranch}" created and pushed. Ready for trigger-release.`);
 }
 
-function processNextMd(changelogDirPath, version) {
+function processNextMd(changelogDirPath, version, nextTemplate) {
     const nextMdPath = path.join(changelogDirPath, 'next.md');
     const versionMdPath = path.join(changelogDirPath, `${version}.md`);
 
@@ -240,17 +237,17 @@ function processNextMd(changelogDirPath, version) {
     fs.writeFileSync(versionMdPath, `${processed}\n`);
     core.info(`Created ${version}.md.`);
 
-    fs.writeFileSync(nextMdPath, NEXT_TEMPLATE);
+    fs.writeFileSync(nextMdPath, nextTemplate);
     core.info('Reset next.md to template.');
 }
 
-function processNextUpgradeMd(changelogDirPath, version) {
+function processNextUpgradeMd(changelogDirPath, version, nextUpgradeTemplate) {
     const nextUpgradeMdPath = path.join(changelogDirPath, 'next-upgrade.md');
     const versionUpgradeMdPath = path.join(changelogDirPath, `${version}-upgrade.md`);
 
     if (!fs.existsSync(nextUpgradeMdPath)) {
         core.info('No next-upgrade.md found — no upgrade guide will be included.');
-        fs.writeFileSync(nextUpgradeMdPath, NEXT_UPGRADE_TEMPLATE);
+        fs.writeFileSync(nextUpgradeMdPath, nextUpgradeTemplate);
         core.info('Created next-upgrade.md from template.');
         return;
     }
@@ -264,7 +261,7 @@ function processNextUpgradeMd(changelogDirPath, version) {
         core.info(`Created ${version}-upgrade.md.`);
     }
 
-    fs.writeFileSync(nextUpgradeMdPath, NEXT_UPGRADE_TEMPLATE);
+    fs.writeFileSync(nextUpgradeMdPath, nextUpgradeTemplate);
     core.info('Reset next-upgrade.md to template.');
 }
 

@@ -22,6 +22,18 @@ inputs:
       Mutually exclusive with version-json.
     required: false
     default: ''
+  next-template:
+    description: >
+      Path to a custom Markdown template file (relative to the repository root) that replaces
+      next.md after each release. If omitted, the built-in default template is used.
+    required: false
+    default: ''
+  next-upgrade-template:
+    description: >
+      Path to a custom Markdown template file (relative to the repository root) that replaces
+      next-upgrade.md after each release. If omitted, the built-in default template is used.
+    required: false
+    default: ''
 
 runs:
   using: 'node24'
