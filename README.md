@@ -480,6 +480,7 @@ Processes the changelog files, creates a `release/X.Y.Z` branch from the current
 | `changelog-dir`   |          | `_changelog` | Path to the changelog directory                                         |
 | `version-json`    |          | —            | Path to a JSON file whose `version` key will be updated                 |
 | `version-updater` |          | —            | Path to a `.js` updater script (mutually exclusive with `version-json`) |
+| `shell`           |          | —            | Shell script executed after changelog/version updates, before the commit |
 
 **Requires** a prior `actions/checkout` with `token: ${{ secrets.WORKFLOW_TOKEN }}` and `fetch-depth: 0`.
 
@@ -607,6 +608,23 @@ module.exports = async function (version, resolve) {
     fs.writeFileSync(phpPath, php);
 };
 ```
+
+### Option C — `shell`
+
+Runs an arbitrary shell script inside the release branch after the changelog and version files have been updated, but **before** the `"Prepare release"` commit is made. This lets you generate or modify any additional project files as part of the release preparation.
+
+The script runs in the repository root (`GITHUB_WORKSPACE`) via `/bin/sh`. After the script completes, the action automatically runs `git add -u` to stage any files it modified or deleted. Newly created (untracked) files must be staged explicitly within the script itself by running `git add` with the appropriate path.
+
+```yaml
+- uses: hawk-digital-environments/hawk-pipeline-actions/create-release-branch@v1
+  with:
+    version: ${{ inputs.version }}
+    shell: |
+      node .github/scripts/generate-api-docs.js
+      php artisan generate:config-reference > docs/config.md
+```
+
+> If the script exits with a non-zero status the action fails immediately and nothing is committed or pushed.
 
 ---
 

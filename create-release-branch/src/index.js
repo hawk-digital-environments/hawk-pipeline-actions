@@ -139,6 +139,7 @@ async function run() {
     const versionUpdater = core.getInput('version-updater');
     const nextTemplatePath = core.getInput('next-template');
     const nextUpgradeTemplatePath = core.getInput('next-upgrade-template');
+    const shellScript = core.getInput('shell');
 
     if (versionJson && versionUpdater) {
         core.setFailed(
@@ -196,6 +197,12 @@ async function run() {
 
     await updateVersion(version, versionJson, versionUpdater, workspace);
 
+    if (shellScript) {
+        core.info('Running custom shell script...');
+        execSync(shellScript, { cwd: workspace, stdio: 'inherit', shell: '/bin/sh' });
+        core.info('Custom shell script completed.');
+    }
+
     execSync('git config --local user.email "action@github.com"', execOpts);
     execSync('git config --local user.name "GitHub Action"', execOpts);
     execSync(`git add "${changelogDir}"`, execOpts);
@@ -203,6 +210,11 @@ async function run() {
     if (versionJson) {
         execSync(`git add "${versionJson}"`, execOpts);
     } else if (versionUpdater) {
+        execSync('git add -u', execOpts);
+    }
+
+    if (shellScript) {
+        core.info('Staging all changes produced by the shell script (git add -u).');
         execSync('git add -u', execOpts);
     }
 

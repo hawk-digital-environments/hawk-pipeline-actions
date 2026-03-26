@@ -34,6 +34,14 @@ inputs:
       next-upgrade.md after each release. If omitted, the built-in default template is used.
     required: false
     default: ''
+  shell:
+    description: >
+      An optional shell script to run inside the release branch after the changelog and version
+      files have been updated but before the "Prepare release" commit is made.
+      Runs in the repository root (GITHUB_WORKSPACE) via /bin/sh.
+      Use this to generate or modify additional project files as part of the release preparation.
+    required: false
+    default: ''
 
 runs:
   using: 'node24'
