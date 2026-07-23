@@ -30290,6 +30290,7 @@ function run() {
     }
 
     const version = detectVersion(strategy, workspace);
+    const majorVersion = version ? semver.major(version) : null;
 
     if (version !== null) {
         const shouldRelease = !isAlreadyTagged(version, workspace);
@@ -30301,6 +30302,7 @@ function run() {
         );
 
         core.setOutput('version', version);
+        core.setOutput('major-version', String(majorVersion));
         core.setOutput('should-release', String(shouldRelease));
     }
 }
