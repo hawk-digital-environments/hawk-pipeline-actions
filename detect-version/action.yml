@@ -27,6 +27,8 @@ inputs:
 outputs:
   version:
     description: 'The detected version, always in X.Y.Z format without a leading "v".'
+  major-version:
+    description: 'The major version number (X) of the detected version. as: "1" for version "1.2.3".'
   should-release:
     description: 'True if the detected version does not yet exist as a git tag on the remote.'
 
