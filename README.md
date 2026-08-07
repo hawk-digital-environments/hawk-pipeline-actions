@@ -1,7 +1,7 @@
 # hawk-pipeline-actions
 
 Reusable GitHub Actions for a GitFlow-inspired release pipeline. Handles changelog
-management, release branch preparation, squash merging, version tagging, GitHub Release
+management, release branch preparation, merging, version tagging, GitHub Release
 creation, and Discord notifications — consistently across every repository that adopts it.
 
 ---
@@ -11,7 +11,7 @@ creation, and Discord notifications — consistently across every repository tha
 ```
 development  ──►  release/vX.Y.Z  ──► main  ──► (tag) ──► Automated pipeline
                         │                                        │
-                        └────────── squash back-merge ──────────►│
+                        └────────────── back-merge ─────────────►│
                                          development             ▼
                                                           Docker / GitHub Release / Discord
 ```
@@ -21,7 +21,7 @@ The process is split into **two manual steps** followed by **one automated step*
 | Step                         | Trigger                          | What happens                                                               |
 |------------------------------|----------------------------------|----------------------------------------------------------------------------|
 | **1. Create Release Branch** | Manual                           | Validates `next.md`, creates `release/vX.Y.Z`, updates the version file    |
-| **2. Trigger Release**       | Manual (from the release branch) | Tests the build, squash-merges to `main` and `development`, pushes the tag |
+| **2. Trigger Release**       | Manual (from the release branch) | Tests the build, merges to `main` and `development`, pushes the tag        |
 | **Automated pipeline**       | Tag push                         | Builds and publishes artefacts, creates GitHub Release, notifies Discord   |
 
 ---
@@ -174,7 +174,7 @@ The pipeline validates `next.md`, renames it to `2.1.0.md`, resets both working 
 3. Select **`release/v2.1.0`** from the **"Use workflow from"** dropdown — this is your release selector, there is no separate input field for the branch
 4. Run the workflow
 
-The pipeline validates the branch name, runs a Docker build test, then squash-merges the release branch into `main` and back into `development`, pushes the version tag, and deletes the release branch. This tag push automatically triggers the automated release pipeline, which builds the Docker image, creates the GitHub Release, and announces the update on Discord.
+The pipeline validates the branch name, runs a Docker build test, then merges the release branch into `main` and back into `development`, pushes the version tag, and deletes the release branch. This tag push automatically triggers the automated release pipeline, which builds the Docker image, creates the GitHub Release, and announces the update on Discord.
 
 > **Hotfix?** The process is identical — the only difference is that you selected `main` as the source in Step 1 instead of `development`. The rest of the workflow is the same.
 
@@ -500,7 +500,7 @@ No inputs. Reads `GITHUB_REF_NAME` from the environment automatically.
 
 ### `trigger-release`
 
-Squash-merges the release branch into the main and development branches, creates the version tag, and deletes the release branch. Requires a prior `actions/checkout` with `token: ${{ secrets.WORKFLOW_TOKEN }}` and `fetch-depth: 0`.
+Merges the release branch into the main and development branches, creates the version tag, and deletes the release branch. Requires a prior `actions/checkout` with `token: ${{ secrets.WORKFLOW_TOKEN }}` and `fetch-depth: 0`.
 
 | Input                | Required | Default       | Description                                            |
 |----------------------|----------|---------------|--------------------------------------------------------|

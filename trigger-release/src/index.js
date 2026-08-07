@@ -15,15 +15,19 @@ function run() {
     execSync('git config --local user.name "GitHub Action"', execOpts);
     execSync('git fetch origin', execOpts);
 
-    // ── 1. Squash-merge release branch → main ──────────────────────────────
-    core.info(`Squash-merging ${releaseBranch} into ${mainBranch}...`);
+    // ── 1. Merge release branch → main ──────────────────────────────────────
+    core.info(`Merging ${releaseBranch} into ${mainBranch}...`);
     try {
         execSync(`git checkout -B ${mainBranch} origin/${mainBranch}`, execOpts);
-        execSync(`git merge --squash origin/${releaseBranch}`, execOpts);
-        execSync(`git commit -m "Release ${version}"`, execOpts);
+        execSync(`git merge --no-ff origin/${releaseBranch} -m "Release ${version}"`, execOpts);
     } catch (error) {
+        try {
+            execSync('git merge --abort', execOpts);
+        } catch (abortError) {
+            // No merge in progress to abort — ignore.
+        }
         core.setFailed(
-            `Failed to squash-merge ${releaseBranch} into ${mainBranch}. ` +
+            `Failed to merge ${releaseBranch} into ${mainBranch}. ` +
             'Nothing has been pushed. Resolve any conflicts on the release branch and re-run.'
         );
         return;
@@ -32,28 +36,32 @@ function run() {
     const sha = execSync('git rev-parse HEAD', { cwd: workspace, stdio: 'pipe' })
         .toString()
         .trim();
-    core.info(`Squash commit on ${mainBranch}: ${sha}`);
+    core.info(`Merge commit on ${mainBranch}: ${sha}`);
 
     execSync(`git push origin ${mainBranch}`, execOpts);
     core.info(`Pushed to ${mainBranch}.`);
 
-    // ── 2. Tag the squash commit ─────────────────────────────────────────────
+    // ── 2. Tag the merge commit ────────────────────────────────────────────
     core.info(`Creating tag ${version} at ${sha}...`);
     execSync(`git tag ${version} ${sha}`, execOpts);
     execSync(`git push origin ${version}`, execOpts);
     core.info(`Tag ${version} pushed.`);
 
-    // ── 3. Squash-merge release branch → development ─────────────────────────
-    core.info(`Squash-merging ${releaseBranch} into ${developmentBranch}...`);
+    // ── 3. Merge release branch → development ──────────────────────────────
+    core.info(`Merging ${releaseBranch} into ${developmentBranch}...`);
     try {
         execSync(`git checkout -B ${developmentBranch} origin/${developmentBranch}`, execOpts);
-        execSync(`git merge --squash origin/${releaseBranch}`, execOpts);
-        execSync(`git commit -m "chore: Back-merge release ${version} into ${developmentBranch}"`, execOpts);
+        execSync(`git merge --no-ff origin/${releaseBranch} -m "chore: Back-merge release ${version} into ${developmentBranch}"`, execOpts);
         execSync(`git push origin ${developmentBranch}`, execOpts);
         core.info(`Pushed back-merge to ${developmentBranch}.`);
     } catch (error) {
+        try {
+            execSync('git merge --abort', execOpts);
+        } catch (abortError) {
+            // No merge in progress to abort — ignore.
+        }
         core.error(
-            `Failed to squash-merge ${releaseBranch} into ${developmentBranch}.\n` +
+            `Failed to merge ${releaseBranch} into ${developmentBranch}.\n` +
             `Tag ${version} has already been pushed — the release pipeline is running.\n` +
             `Please resolve the conflict manually and push the back-merge to ${developmentBranch}.`
         );

@@ -1,5 +1,5 @@
 name: 'Trigger Release'
-description: 'Squash-merges a release branch into the main and development branches, then creates a version tag.'
+description: 'Merges a release branch into the main and development branches, then creates a version tag.'
 
 inputs:
   version:
