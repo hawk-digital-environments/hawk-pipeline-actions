@@ -470,42 +470,6 @@ Detects the current project version using one of four strategies, then checks wh
 
 ---
 
-### `check-branch-tip`
-
-Checks whether the checked-out commit is the tip of a branch on the remote. Useful for manual
-rebuild workflows that may run from an older commit or tag: gate pushing the `latest` image tag
-on `is-branch-tip`, so a rebuild of an old release republishes only that version's tag and can
-never regress `latest`. Uses `git ls-remote`, so it works with any checkout depth.
-
-| Input     | Required | Default  | Description                                            |
-|-----------|----------|----------|--------------------------------------------------------|
-| `branch`  |          | `main`   | The branch whose tip the checkout is compared against |
-| `remote`  |          | `origin` | The git remote to query                                |
-
-| Output           | Description                                                                  |
-|------------------|------------------------------------------------------------------------------|
-| `is-branch-tip`  | `'true'` if the checked-out HEAD is the tip of the given remote branch         |
-| `head-sha`       | Full SHA of the checked-out HEAD commit                                       |
-| `branch-tip-sha` | Full SHA of the branch tip on the remote, empty when the branch was not found |
-
-**Requires** a prior `actions/checkout` of the ref you want to inspect.
-
-```yaml
-- uses: actions/checkout@v7
-  with:
-    ref: ${{ inputs.ref }}
-
-- id: ref_info
-  uses: hawk-digital-environments/hawk-pipeline-actions/check-branch-tip@v1
-  with:
-    branch: main
-
-# Gate on the result, e.g. push a "latest" tag only from the branch tip:
-# if: steps.ref_info.outputs.is-branch-tip == 'true'
-```
-
----
-
 ### `create-release-branch`
 
 Processes the changelog files, creates a `release/X.Y.Z` branch from the current branch, and optionally updates a version file. Requires a prior `actions/checkout` with `token: ${{ secrets.WORKFLOW_TOKEN }}` and `fetch-depth: 0`.
