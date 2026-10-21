@@ -1,0 +1,24 @@
+name: 'Check Branch Tip'
+description: 'Checks whether the checked-out commit is the tip of a branch on the remote. Useful for rebuild workflows that may run from an older commit or tag.'
+
+inputs:
+  branch:
+    description: 'The branch whose tip on the remote the checked-out HEAD is compared against.'
+    required: false
+    default: 'main'
+  remote:
+    description: 'The git remote to query for the branch tip.'
+    required: false
+    default: 'origin'
+
+outputs:
+  is-branch-tip:
+    description: '"true" if the checked-out HEAD commit is the tip of the given remote branch, "false" otherwise. Fail-safe: "false" when the branch tip cannot be resolved.'
+  head-sha:
+    description: 'The full SHA of the checked-out HEAD commit.'
+  branch-tip-sha:
+    description: 'The full SHA of the given branch tip on the remote. Empty when the branch could not be found on the remote.'
+
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
